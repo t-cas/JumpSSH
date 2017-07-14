@@ -17,14 +17,14 @@ from jumpssh import exception, SSHSession
 from . import util as tests_util
 
 
-@pytest.fixture(scope="module")
-def docker_env():
+@pytest.fixture(scope="module", params=['alpine', 'centos', 'ubuntu'])
+def docker_env(request):
     my_docker_env = tests_util.DockerEnv()
-    my_docker_env.start_host('image_sshd', 'gateway')
-    my_docker_env.start_host('image_sshd', 'remotehost')
-    my_docker_env.start_host('image_sshd', 'remotehost2')
+    my_docker_env.start_host('image_sshd', 'gateway', linux_distribution=request.param)
+    my_docker_env.start_host('image_sshd', 'remotehost', linux_distribution=request.param)
+    my_docker_env.start_host('image_sshd', 'remotehost2', linux_distribution=request.param)
     yield my_docker_env  # provide the fixture value
-    print("teardown docker_env")
+    print("teardown docker_env %s" % request.param)
     my_docker_env.clean()
 
 
@@ -156,8 +156,24 @@ def test_run_cmd(docker_env, capfd):
     out, err = capfd.readouterr()
     assert len(out) > 0
 
-    # run command as user2
+
+def test_run_cmd_sudo(docker_env):
+    gateway_ip, gateway_port = docker_env.get_host_ip_port('gateway')
+
+    gateway_session = SSHSession(host=gateway_ip, port=gateway_port,
+                                 username='user1', password='password1').open()
+
+    # user1 can use sudo
+    assert gateway_session.run_cmd('sudo whoami').output.strip() == 'root'
+
+    # user1 can also impersonate root user
+    assert gateway_session.run_cmd('whoami', username='root').output.strip() == 'root'
+
+    # user1 run command as user2
     assert gateway_session.run_cmd('whoami', username='user2')[1].strip() == 'user2'
+
+    # user1 run sudo command as user3
+    assert gateway_session.run_cmd('sudo whoami', username='user3')[1].strip() == 'root'
 
 
 def get_cmd_output(docker_env):

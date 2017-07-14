@@ -15,10 +15,15 @@ RUN \
   chown -R user1:user1 /home/user1 && \
   adduser -D -s /bin/ash user2 && \
   echo "user2:password2" | chpasswd && \
-  chown -R user2:user2 /home/user2
+  chown -R user2:user2 /home/user2 && \
+  adduser -D -s /bin/ash user3 && \
+  echo "user3:password2" | chpasswd && \
+  chown -R user3:user3 /home/user3
 
 # give sudo permission to user1
 RUN echo "user1	 ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/my_sudoers
+# give sudo permission to user3
+RUN echo "user3  ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/my_sudoers
 
 RUN ssh-keygen -A
 

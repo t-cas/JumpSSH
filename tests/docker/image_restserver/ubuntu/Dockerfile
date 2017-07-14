@@ -1,8 +1,6 @@
 FROM jumpssh/image_sshd:latest
 
-RUN apk add --update \
-    python \
-    py-pip \
+RUN apt-get install -y python-pip \
   && pip install --upgrade pip \
   && pip install flask -U \
   && rm -rf /var/cache/apk/* \
@@ -13,7 +11,7 @@ RUN apk add --update \
 USER app
 
 # add directly the jar
-ADD app.py /restserver/app.py
+ADD ../app.py /restserver/app.py
 
 CMD python /restserver/app.py
 

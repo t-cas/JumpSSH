@@ -34,11 +34,11 @@ class DockerEnv(object):
         if docker_host:
             return docker_host.get_host_ip_port(private_port=private_port)
 
-    def start_host(self, image_name, hostname):
+    def start_host(self, image_type, hostname, linux_distribution):
         if hostname in self.hosts:
             raise Exception("host with name '%s' already exists")
         try:
-            self.hosts[hostname] = DockerHost(self.cli, image_name, hostname)
+            self.hosts[hostname] = DockerHost(self.cli, image_type, hostname, linux_distribution)
         except docker.errors.DockerException:
             self.clean()
             raise
@@ -49,10 +49,13 @@ class DockerEnv(object):
 
 
 class DockerHost(object):
-    def __init__(self, cli, image_name, name):
+    def __init__(self, cli, image_type, hostname, linux_distribution):
         self.cli = cli
-        self.name = name
-        self.image_name = image_name
+        self.hostname = hostname
+        self.image_type = image_type
+        self.linux_distribution = linux_distribution
+
+        self.image_name = '%s_%s' % (self.image_type, self.linux_distribution)
         self.container_id = None
 
         # no image with that name currently exists, build it
@@ -60,10 +63,10 @@ class DockerHost(object):
             self.build_image()
 
         container = self.cli.create_container(
-            image='jumpssh/%s:latest' % image_name,
+            image='jumpssh/%s:latest' % self.image_name,
             detach=True,
-            name='jumpssh_%s_%s' % (name, datetime.datetime.now().strftime('%Y%m%d%H%M%S')),
-            hostname='%s.example.com' % name,
+            name='jumpssh_%s_%s' % (hostname, datetime.datetime.now().strftime('%Y%m%d%H%M%S')),
+            hostname='%s.example.com' % hostname,
             host_config=self.cli.create_host_config(publish_all_ports=True))
 
         self.container_id = container['Id']
@@ -77,7 +80,7 @@ class DockerHost(object):
             return host_ip, host_port
 
     def build_image(self):
-        dockerfile_path = os.path.join(os.path.dirname(__file__), 'docker', self.image_name)
+        dockerfile_path = os.path.join(os.path.dirname(__file__), 'docker', self.image_type, self.linux_distribution)
         if not os.path.isfile(os.path.join(dockerfile_path, 'Dockerfile')):
             raise Exception("Missing Dockerfile in '%s'" % dockerfile_path)
         for line in self.cli.build(
