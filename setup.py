@@ -56,7 +56,8 @@ setup(
     platforms='Unix; MacOS X',
 
     install_requires=[
-        'paramiko'
+        'paramiko',
+        'requests'
     ],
     test_suite='tests',
     setup_requires=[

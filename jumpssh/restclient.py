@@ -15,6 +15,10 @@ try:
 except ImportError:
     from io import BytesIO as FakeSocketParam  # Python3
 
+from requests.packages.urllib3.connection import HTTPConnection
+from requests.packages.urllib3.connectionpool import HTTPConnectionPool
+from requests.adapters import HTTPAdapter
+
 from . import exception, SSHSession
 
 logger = logging.getLogger(__name__)
@@ -292,3 +296,36 @@ class HTTPResponse:
         except ValueError:
             result += self.text
         return result
+
+
+class HttpSshAdapter(HTTPAdapter):
+    def __init__(self, channel, timeout=None):
+        super(HttpSshAdapter, self).__init__()
+        self.channel = channel
+        self.timeout = timeout
+
+    def get_connection(self, url, proxies=None):
+        return MyHTTPConnectionPool(channel=self.channel, timeout=self.timeout)
+
+    def request_url(self, request, proxies):
+        return request.path_url
+
+
+class MyHTTPConnection(HTTPConnection):
+    def __init__(self, channel, timeout=None):
+        HTTPConnection.__init__(self, channel.getpeername()[0], channel.getpeername()[1], timeout=timeout)
+        self.sock = channel
+        self.timeout = timeout
+
+    def connect(self):
+        pass
+
+
+class MyHTTPConnectionPool(HTTPConnectionPool):
+    def __init__(self, channel, timeout=60):
+        HTTPConnectionPool.__init__(self, channel.getpeername()[0], channel.getpeername()[1], timeout=timeout)
+        self.channel = channel
+        self.timeout = timeout
+
+    def _new_conn(self):
+        return MyHTTPConnection(self.channel, self.timeout)
