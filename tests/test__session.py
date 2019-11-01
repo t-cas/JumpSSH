@@ -497,7 +497,7 @@ def test_put(docker_env):
     with pytest.raises(IOError) as excinfo:
         remotehost_session.put(local_path=local_path, remote_path='/tmp/my_file')
     assert excinfo.value.errno == errno.ENOENT
-    assert excinfo.value.strerror == "Local file '%s' does not exist" % local_path
+    assert excinfo.value.strerror == "Local path '%s' does not exist." % local_path
 
     # create random file locally
     local_path = os.path.join(os.path.dirname(__file__), 'random_file')

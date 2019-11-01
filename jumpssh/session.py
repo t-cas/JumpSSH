@@ -567,17 +567,20 @@ class SSHSession(object):
             owner=None,
             permissions=None,
             username=None,
+            overwrite=False,
             ):
-        """ Upload a file to the remote host
+        """ Upload a file or folder to the remote host
 
-        :param local_path: path of the local file to upload
-        :param remote_path: destination folder in which to upload the local file
-        :param use_sudo: allow to upload a file in location with restricted permissions
-        :param owner: user that will own the copied file on the remote host
+        :param local_path: path of the local file/folder to upload
+        :param remote_path: destination folder in which to upload the local file/folder
+        :param use_sudo: allow to upload files in location with restricted permissions
+        :param owner: user that will own the copied files on the remote host
             syntax : `user:group` or simply `user` if same than group
-        :param permissions: permissions to apply on the remote file (chmod format)
+        :param permissions: permissions to apply on the remote files (chmod format)
         :param username: sudo user
-        :raise IOError: if local file `local_path` does not exist
+        :param overwrite: override destination if already exists
+        :raise IOError: if local path `local_path` does not exist
+            or remote_path already exists and overwrite is False
 
         Usage::
 
@@ -591,16 +594,42 @@ class SSHSession(object):
             >>> ssh_session.put(local_path='/path/to/local/file', remote_path='/path/to/remote/file',
             ...                 owner='root', permissions='600')
         """
-        if not os.path.isfile(local_path):
-            raise IOError(errno.ENOENT, "Local file '%s' does not exist" % local_path)
+        if not os.path.exists(local_path):
+            raise IOError(errno.ENOENT, "Local path '%s' does not exist." % local_path)
 
-        logger.debug("Copy local file '%s' on remote host '%s' in '%s' as '%s'"
-                     % (local_path, self.host, remote_path, self.username))
+        if self.exists(remote_path, use_sudo=use_sudo) and overwrite is False:
+            raise IOError(errno.EEXIST,
+                          "Remote path '%s' already exists. Use overwrite=True to override destination." % remote_path)
 
-        # create file remotely
-        with open(local_path, 'rb') as local_file:
-            self.file(remote_path=remote_path, content=local_file.read(),
-                      use_sudo=use_sudo, owner=owner, permissions=permissions, username=username, silent=True)
+        command_user = username or use_sudo and 'root'
+
+        if os.path.isdir(local_path):
+            remote_dir = os.path.join(remote_path, os.path.basename(local_path))
+
+            # create remote dir
+            self.run_cmd("mkdir -p %s" % remote_dir, silent=True, username=command_user)
+
+            # iterate recursively over sub files/folders
+            for sub_item in os.listdir(local_path):
+                self.put(
+                    local_path=os.path.join(local_path, sub_item),
+                    remote_path=remote_dir,
+                    use_sudo=use_sudo,
+                    owner=owner,
+                    permissions=permissions,
+                    username=username,
+                    overwrite=overwrite,
+                )
+        elif os.path.isfile(local_path):
+            logger.debug("Copy local file '%s' on remote host '%s' in '%s' as '%s'"
+                         % (local_path, self.host, remote_path, self.username))
+
+            # create file remotely
+            with open(local_path, 'rb') as local_file:
+                self.file(remote_path=remote_path, content=local_file.read(),
+                          use_sudo=use_sudo, owner=owner, permissions=permissions, username=username, silent=True)
+        else:
+            logger.warning("Unsupported file item '%s' is ignored." % local_path)
 
     def get(self,
             remote_path,

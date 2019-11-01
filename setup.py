@@ -47,6 +47,7 @@ setup(
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
     ],
 
     packages=['jumpssh'],
@@ -57,9 +58,6 @@ setup(
         'paramiko'
     ],
     test_suite='tests',
-    setup_requires=[
-        'pytest-runner'
-    ],
     tests_require=[
         'docker',
         'docker-compose',
