@@ -3,6 +3,7 @@ from __future__ import print_function
 import collections
 import datetime
 import errno
+import glob
 from io import StringIO
 import logging
 import os
@@ -560,6 +561,32 @@ class SSHSession(object):
             cmd = 'sudo ' + cmd
         return self.get_exit_code(cmd, silent=True) == 0
 
+    def is_dir(
+        self,
+        path,
+        use_sudo=False,
+    ):
+        """Check if specified path on remote host is a directory
+
+        :param path: remote host path
+        :type path: str
+        :param use_sudo: if True, allow to check path current user doesn't have access by default
+        :type use_sudo: bool
+        :rtype: bool
+        :return: True if remote path is a directory, False otherwise
+        :raises IOError: if specified path does not exist on remote host
+        """
+        # cannot check path type if path does not exist
+        if not self.exists(path, use_sudo=use_sudo):
+            raise IOError(errno.ENOENT, "Remote path '%s' does not exist." % path)
+
+        return self.run_cmd(
+            "[ -d %s ]" % path,
+            username='root' if use_sudo else None,
+            raise_if_error=False,
+            silent=True,
+        ).exit_code == 0
+
     def put(self,
             local_path,
             remote_path,
@@ -568,6 +595,7 @@ class SSHSession(object):
             permissions=None,
             username=None,
             overwrite=False,
+            ignore_duplicate=False,
             ):
         """ Upload a file or folder to the remote host
 
@@ -579,8 +607,10 @@ class SSHSession(object):
         :param permissions: permissions to apply on the remote files (chmod format)
         :param username: sudo user
         :param overwrite: override destination if already exists
-        :raise IOError: if local path `local_path` does not exist
-            or remote_path already exists and overwrite is False
+        :param ignore_duplicate: if destination already exists, just ignore file and don't raise any error
+        :raise IOError: if `local_path` does not exist
+            or if `remote_path` already exists and overwrite is False
+            or `remote_path` is invalid (ex: missing parent folder)
 
         Usage::
 
@@ -594,42 +624,81 @@ class SSHSession(object):
             >>> ssh_session.put(local_path='/path/to/local/file', remote_path='/path/to/remote/file',
             ...                 owner='root', permissions='600')
         """
-        if not os.path.exists(local_path):
+        # expand user and shell variables
+        local_path_expanded = os.path.expandvars(os.path.expanduser(local_path))
+
+        # iterate over all matching items
+        found_item = False
+        glob_iterator = glob.iglob(local_path_expanded) if util.PY2 else glob.iglob(local_path_expanded, recursive=True)
+        for local_path_item in glob_iterator:
+            found_item = True
+
+            if os.path.isdir(local_path_item):
+                remote_dir = os.path.join(remote_path, os.path.basename(local_path_item))
+
+                if self.exists(remote_dir, use_sudo=use_sudo) and overwrite is False and ignore_duplicate is False:
+                    raise IOError(errno.EEXIST,
+                                  "Remote folder '%s' already exists. "
+                                  "Use overwrite=True to override it or ignore_duplicate=True to ignore it."
+                                  % remote_dir)
+
+                # create remote dir
+                self.run_cmd("mkdir -p %s" % remote_dir,
+                             silent=False,
+                             username=username if username else 'root' if use_sudo else None)
+
+                # iterate recursively over sub files/folders
+                for sub_item in os.listdir(local_path_item):
+                    self.put(
+                        local_path=os.path.join(local_path_item, sub_item),
+                        remote_path=remote_dir,
+                        use_sudo=use_sudo,
+                        owner=owner,
+                        permissions=permissions,
+                        username=username,
+                        overwrite=overwrite,
+                    )
+
+            elif os.path.isfile(local_path_item):
+                # set default remote path
+                remote_file_path = remote_path
+
+                if self.exists(remote_path, use_sudo=use_sudo):
+                    # destination specified is an existing folder
+                    # just copy file in it
+                    if self.is_dir(remote_path, use_sudo=use_sudo):
+                        remote_file_path = os.path.join(remote_path, os.path.basename(local_path_item))
+                    # destination is a file
+                    else:
+                        # ignore current file as already present
+                        if ignore_duplicate is True:
+                            continue
+                        # destination is already present and no overwrite requested, raise an error
+                        if overwrite is False:
+                            raise IOError(
+                                errno.EEXIST,
+                                "File already exists at specified location '%s'. "
+                                "Use overwrite=True to override it or ignore_duplicate=True to ignore it."
+                                % remote_path)
+                else:
+                    remote_parent = os.path.dirname(remote_path)
+                    if not self.exists(remote_parent):
+                        raise IOError(
+                            errno.ENOENT,
+                            "Parent folder does not exists for file '%s'." % remote_path)
+
+                logger.debug("Copy local file '%s' on remote host '%s' in '%s' as '%s'"
+                             % (local_path_item, self.host, remote_path, self.username))
+
+                # create file remotely
+                with open(local_path_item, 'rb') as local_file:
+                    self.file(remote_path=remote_file_path, content=local_file.read(),
+                              use_sudo=use_sudo, owner=owner, permissions=permissions, username=username, silent=True)
+            else:
+                logger.warning("Unsupported file item '%s' is ignored." % local_path_item)
+
+        if not found_item:
             raise IOError(errno.ENOENT, "Local path '%s' does not exist." % local_path)
-
-        if self.exists(remote_path, use_sudo=use_sudo) and overwrite is False:
-            raise IOError(errno.EEXIST,
-                          "Remote path '%s' already exists. Use overwrite=True to override destination." % remote_path)
-
-        command_user = username or use_sudo and 'root'
-
-        if os.path.isdir(local_path):
-            remote_dir = os.path.join(remote_path, os.path.basename(local_path))
-
-            # create remote dir
-            self.run_cmd("mkdir -p %s" % remote_dir, silent=True, username=command_user)
-
-            # iterate recursively over sub files/folders
-            for sub_item in os.listdir(local_path):
-                self.put(
-                    local_path=os.path.join(local_path, sub_item),
-                    remote_path=remote_dir,
-                    use_sudo=use_sudo,
-                    owner=owner,
-                    permissions=permissions,
-                    username=username,
-                    overwrite=overwrite,
-                )
-        elif os.path.isfile(local_path):
-            logger.debug("Copy local file '%s' on remote host '%s' in '%s' as '%s'"
-                         % (local_path, self.host, remote_path, self.username))
-
-            # create file remotely
-            with open(local_path, 'rb') as local_file:
-                self.file(remote_path=remote_path, content=local_file.read(),
-                          use_sudo=use_sudo, owner=owner, permissions=permissions, username=username, silent=True)
-        else:
-            logger.warning("Unsupported file item '%s' is ignored." % local_path)
 
     def get(self,
             remote_path,

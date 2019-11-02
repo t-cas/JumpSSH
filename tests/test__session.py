@@ -484,7 +484,7 @@ def test_exists(docker_env):
     gateway_session.run_cmd('sudo rm -rf /etc/user2_private_dir')
 
 
-def test_put(docker_env):
+def test_put_single_file(docker_env):
     gateway_ip, gateway_port = docker_env.get_host_ip_port()
     gateway_session = SSHSession(host=gateway_ip, port=gateway_port,
                                  username='user1', password='password1').open()
@@ -524,6 +524,33 @@ def test_put(docker_env):
             "stat -c '%a %n' " + remote_path + " | awk '{print $1}'") == '600'
     finally:
         os.remove(local_path)
+
+
+def test_put_recursive(docker_env):
+    gateway_ip, gateway_port = docker_env.get_host_ip_port()
+    gateway_session = SSHSession(host=gateway_ip, port=gateway_port,
+                                 username='user1', password='password1').open()
+
+    remotehost_session = gateway_session.get_remote_session(host='remotehost',
+                                                            port=22,
+                                                            username='user1',
+                                                            password='password1')
+    # use "tests" folder as local folder to copy on remote host
+    source_folder = os.path.dirname(__file__)
+    remote_path = os.path.join('/tmp', util.id_generator())
+
+    remotehost_session.put(
+        local_path=source_folder,
+        remote_path=remote_path,
+    )
+
+    # check all files and folders in local path are present on remote host
+    for dirpath, dirnames, filenames in os.walk(source_folder):
+        relative_dirpath = dirpath.replace(os.path.dirname(source_folder), '').lstrip('/')
+        for filename in filenames:
+            assert remotehost_session.exists(os.path.join(remote_path, relative_dirpath, filename))
+        for dirname in dirnames:
+            assert remotehost_session.is_dir(os.path.join(remote_path, relative_dirpath, dirname))
 
 
 @pytest.mark.parametrize(
