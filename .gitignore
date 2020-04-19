@@ -10,3 +10,5 @@ docs/html
 .idea/
 .eggs/
 .pyenv*
+venv*
+.pytest_cache/

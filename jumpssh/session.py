@@ -20,7 +20,7 @@ SSH_PORT = 22
 
 
 class SSHSession(object):
-    """Establish SSH session with a remote host
+    r"""Establish SSH session with a remote host
 
     :param host: name or ip of the remote host
     :param username: user to be used for remote ssh session
@@ -33,7 +33,11 @@ class SSHSession(object):
     :param password: password to be used for authentication with remote host
     :param missing_host_key_policy: set policy to use when connecting to servers without a known host key.
         This parameter is a class **instance** of type
-        :class:`paramiko.client.MissingHostKeyPolicy <paramiko.client.MissingHostKeyPolicy>`, not a **classes** itself
+        :class:`paramiko.client.MissingHostKeyPolicy <paramiko.client.MissingHostKeyPolicy>`, not a **class** itself
+    :param compress: set to True to turn on compression for this session
+    :param \**kwargs: any parameter taken by
+        :meth:`paramiko.client.SSHClient.connect <paramiko.client.SSHClient.connect>`
+        and not already explicitly covered by `SSHSession`
 
     Usage::
 
@@ -48,7 +52,9 @@ class SSHSession(object):
             private_key_file=None,
             port=SSH_PORT,
             password=None,
-            missing_host_key_policy=None
+            missing_host_key_policy=None,
+            compress=False,
+            **kwargs
     ):
         self.host = host
         self.port = port
@@ -57,6 +63,10 @@ class SSHSession(object):
         self.retry_nb = 0
         self.proxy_transport = proxy_transport
         self.private_key_file = private_key_file
+        self.compress = compress
+
+        # get input key/value parameters from user, they will be given to paramiko.client.SSHClient.connect
+        self.extra_parameters = kwargs
 
         self.ssh_remote_sessions = {}
 
@@ -135,13 +145,19 @@ class SSHSession(object):
                     hostname = self.host
                     port = self.port
 
+                # update with existing default values from SSHSession
+                self.extra_parameters.update({
+                    'hostname': hostname,
+                    'port': port,
+                    'username': self.username,
+                    'compress': self.compress,
+                    'key_filename': self.private_key_file,
+                    'password': self.password,
+                    'sock': ssh_channel,
+                })
+
                 # connect to the host
-                self.ssh_client.connect(hostname=hostname,
-                                        port=port,
-                                        username=self.username,
-                                        sock=ssh_channel,
-                                        key_filename=self.private_key_file,
-                                        password=self.password)
+                self.ssh_client.connect(**self.extra_parameters)
 
                 # no exception raised => connected to remote host
                 break
@@ -259,9 +275,8 @@ class SSHSession(object):
             # need to run full command with shell to support shell builtins commands (source, ...)
             my_cmd = 'sudo su - %s -c "%s"' % (user, cmd.replace('"', '\\"'))
 
-        # check session is still active before running a command, else try to open it
-        if not self.is_active():
-            self.open()
+        # open session if not already the case
+        self.open()
 
         # conceal text from command to be logged if requested with silent parameter
         cmd_for_log = cmd
@@ -303,8 +318,8 @@ class SSHSession(object):
                     readq, _, _ = select.select([channel], [], [], timeout)
                     for c in readq:
                         if c.recv_ready():
-                            data = channel.recv(len(c.in_buffer))
-                            output.write(data.decode('utf-8'))
+                            data = channel.recv(len(c.in_buffer)).decode('utf-8')
+                            output.write(data)
                             got_chunk = True
 
                             # print output all along the command is running
@@ -315,7 +330,7 @@ class SSHSession(object):
                                 # We received a potential prompt.
                                 for pattern in input_data.keys():
                                     # pattern text matching current output => send input data
-                                    if re.search(pattern.encode('utf-8'), data):
+                                    if re.search(pattern, data):
                                         channel.send(input_data[pattern] + '\n')
 
                     # remote process has exited and returned an exit status
@@ -430,9 +445,11 @@ class SSHSession(object):
             private_key_file=None,
             port=SSH_PORT,
             password=None,
-            retry_interval=10
+            retry_interval=10,
+            compress=False,
+            **kwargs
     ):
-        """ Establish connection with a remote host from current session
+        r""" Establish connection with a remote host from current session
 
         :param host: name or ip of the remote host
         :param username: user to be used for remote ssh session
@@ -441,6 +458,10 @@ class SSHSession(object):
         :param port: port to connect to the remote host (default 22)
         :param password: password to be used for authentication with remote host
         :param retry_interval: number of seconds between each retry
+        :param compress: set to True to turn on compression for this session
+        :param \**kwargs: any parameter taken by
+            :meth:`paramiko.client.SSHClient.connect <paramiko.client.SSHClient.connect>`
+            and not already explicitly covered by `SSHSession`
         :return: session object of the remote host
         :rtype: SSHSession
 
@@ -462,8 +483,7 @@ class SSHSession(object):
             >>> remote_session = ssh_session.get_remote_session('remote.example.com', retry=-1)
         """
         # check session is still active before using it as a jump server, else try to open it
-        if not self.is_active():
-            self.open()
+        self.open()
 
         # get user to be used for remote ssh session (default : same user than parent session)
         user = self.username
@@ -488,8 +508,10 @@ class SSHSession(object):
                                     proxy_transport=self.ssh_transport,
                                     private_key_file=private_key_file,
                                     port=port,
-                                    password=password).open(retry=retry,
-                                                            retry_interval=retry_interval)
+                                    password=password,
+                                    compress=compress,
+                                    **kwargs).open(retry=retry,
+                                                   retry_interval=retry_interval)
 
         # keep reference to opened session, to be able to reuse it later
         self.ssh_remote_sessions[session_key] = remote_session
@@ -584,7 +606,7 @@ class SSHSession(object):
             remote_path,
             local_path,
             use_sudo=False,
-            username=None
+            username=None,
             ):
         """Download a file from the remote host
 
@@ -606,10 +628,12 @@ class SSHSession(object):
         sudo_username = username if username else 'root' if use_sudo else None
 
         # copy first remote file in a temporary location accessible from current user
+        # making sure current user own this file
         if use_sudo:
             copy_path = "/tmp/%s" % util.id_generator(size=15)
-            copy_command = "cp %s %s" % (remote_path, copy_path)
-            self.run_cmd(copy_command, silent=True, username=sudo_username)
+            self.run_cmd(["cp %s %s" % (remote_path, copy_path),
+                          "chown $USER:$USER %s" % copy_path],
+                         silent=True, username=sudo_username)
 
         # if local download path is a directory, local filename will be same as remote
         if os.path.isdir(local_path):
@@ -617,9 +641,9 @@ class SSHSession(object):
 
         sftp_client = self.get_sftp_client()
         try:
-            with open(local_path, mode='w') as local_file:
-                with sftp_client.file(copy_path) as remote_file:
-                    local_file.write(remote_file.read().decode('utf-8'))
+            with sftp_client.file(copy_path) as remote_file:
+                with open(local_path, mode='wb') as local_file:
+                    local_file.write(remote_file.read())
         finally:
             if use_sudo:
                 # cleanup temporary file
@@ -660,6 +684,10 @@ class SSHSession(object):
         """
         if not silent:
             logger.debug("Create file '%s' on remote host '%s' as '%s'" % (remote_path, self.host, self.username))
+
+        # ensure the connection is open
+        self.open()
+
         sftp_client = self.get_sftp_client()
 
         copy_path = remote_path

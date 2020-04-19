@@ -1,11 +1,4 @@
-# required for sonar (https://docs.travis-ci.com/user/sonarqube/)
-dist: trusty
-
-# required for docker and sonar
-sudo: required
-
 language: python
-
 cache: pip
 
 services:
@@ -26,19 +19,19 @@ os:
   - linux
 
 python:
-  - 2.6
   - 2.7
-  - 3.3
-  - 3.4
   - 3.5
   - 3.6
-  - pypy-5.6.0
+  - 3.7
+  - 3.8
+  - pypy
+  - pypy3
 
-matrix:
+jobs:
   include:
-    - python: "3.6"
+    - python: 3.8
       env: TOX_ENV=flake8
-    - python: "3.6"
+    - python: 3.8
       env: TOX_ENV=docs
 
 install:
@@ -59,10 +52,12 @@ after_success:
 deploy:
   # deploys to PyPI on any tagged commit
   - provider: pypi
-    user: tcastaing
+    username: "__token__"
     password:
-      secure: "SQogu9XzcnplQBLWXqo2qwZBUpgInKflrei6BdTaYbxmCtdbCmev7H9OHBBXzzPe8R5WjjKqKNw6rFBJP2kAp2pS9KNJi1BfhHNvvs4JDgt4xUQ6hlcvyBAV+/L+EslIcXgm4AjEGBCn6G+4i9dwonYgl1iMIh0DAgRGQHexnyKDWpxlsgdH3TInwC2vZuZARAGhvzy3KB/X1nBNa6wbD7qEVTMiHmEEIZINS3PG6SGcaBSYSJaOPi2f7/MWLhzxXgKfWJgNpPNrMzlHJ4J7GSHlUlsLVZKaYoBihPa5+e6dkVKh8qrxJBIZe4y5kKuY+sRtlslFwbVQj8dE6T5rdiPLuBDhTkTL98tVAgHrKZjmhZ97sak/iPr14yHAk5K9hgEh+wsI8w48Edhk4KA+MmQA4lhPUzFW0Fm9jqVkpowNjc4NgAcGK009cW1+ZjlZnQFwIzfoYgbKsyisGwdclVHAotpxnibZqBfza0AXhbeX+5w+ZEF92gqvjdvG6dMWiQdplRWyYScpAq/1c2L8EkhXYfk8i8Jl+LkuH2xoRfEdG0Vr/EpW1omThkwGz2v6QPd29p1EgI4hiJ7GsmQvf8DoPejMW46QibZWKENIxkN2md9UzIKQEuNo7mf2pXGUgfdXtxjIC8AnHyoYCyqpjSPeBMi1uKQYLI/wnGpckDY="
+      secure: "i0WSXHnHn9S+N3+GYqQqJyTJdA9T7eKkVLJmacHMyVnseinD/1JHSjWcxUx9otFSn9nNo/Nhs67PGTyPLWPOlP4JfC7nmRUC9EvIHputRurkvzD7H3Gv0AzMej18LZof/dMoxioX5vMwjfUmjvUKJ3wMZeAJwtUIB9NJlwWC/O2SrjfhRD/Wv0JnmP49h9GUsbkbtGTki7810fOZBNeo1XPy6oSVnTErPKafuMIJs4EsQ8e4xiDWmlXRAs9zIOFdJ83l/RsEHw3o/8SFhvGfI/Zc4o78sU7Gw367mT/qrS5u1Qg8BMHjHaalGcD09fH/aCfPJ/Yww/gjAFrfcQgZeLp7AUwXMF1uGcIs/YKxihKRsr4QugMzjVEDJG2+RMdNM3YQ4DUd0D9dIFqYm7xEV4Emc+5kCrElPZwShL5QPr0fxJhhjnDCw+T7daQpP98vZ27gLXrE8hW/BwfDemmr3+ZYM55+hSoqK3hzv85V/BgN1f26u4NonzHXmINB3sQNGPT2apuPaZkBS3sBxYCf5TBZPiShEkX/cooyZZd1r7RwpubD/j45lLMLy+r/L9P+PKj+6dLh7SLZxFVExarnZiEcDC2Sgjdnv/v7XDGoLQLCNQsJJFC8X9rxMSOQVZu1j94yMTkuA6Zg7FTuHK5CDiIwoybMrztEUPwZJ2lv3j0="
+    distributions: sdist bdist_wheel
     on:
       tags: true
-      distributions: sdist bdist_wheel
       repo: AmadeusITGroup/JumpSSH
+    # Upload artifacts only once
+    skip_existing: true

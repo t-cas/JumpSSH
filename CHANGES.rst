@@ -1,3 +1,33 @@
+1.6.2 (03/12/2020)
+------------------
+- [Improvement]: remove pytest-runner from setup_requires as this is deprecated for security reasons, see https://github.com/pytest-dev/pytest-runner
+- [Improvement]: use only fixed test dependencies in requirements_dev.txt
+
+1.6.1 (04/08/2019)
+------------------
+- [Bug] :issue:`51`: 'get' file was failing if the remote file is binary. Thanks to :user:`pshaobow` for the report.
+- [Feature]: Ability to use any parameter of `paramiko.client.SSHClient.connect` in `get_remote_session`, was forgotten during implementation of :issue:`43`.
+- [Improvement]: tests migrated to docker-compose to setup docker environment
+
+1.5.1 (01/14/2019)
+------------------
+- [Feature] :issue:`43`: Ability to use any parameter of paramiko.client.SSHClient.connect in SSHSession.
+
+1.4.1 (03/31/2018)
+------------------
+- [Bug] :issue:`33`: Fix download of file owned by root with `SSHSession.get`
+- [Bug] : Automatically open closed session when calling SSHSession.put. Thanks to :user:`fmaupas` for the fix.
+
+1.4.0 (01/29/2018)
+------------------
+- [Feature] :issue:`29`: Expose compression support from Paramiko (inherited from SSH).
+  Thanks to :user:`fmaupas` for the contribution.
+
+1.3.2 (12/17/2017)
+------------------
+- [Bug] :issue:`23`: do not print `byte` but `str` in continuous output when running command with python3.
+  Thanks to :user:`nicholasbishop` for the report.
+
 1.3.1 (09/15/2017)
 ------------------
 - fix interruption of remote command when transport channel is already closed

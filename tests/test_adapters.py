@@ -1,4 +1,5 @@
 import logging
+import os
 
 import pytest
 import requests
@@ -6,22 +7,19 @@ import requests
 from jumpssh import restclient, SSHSession
 from . import util as tests_util
 
-logging.basicConfig()
+
+REMOTE_HOST_IP_PORT = 'remotehost:5000'
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="module")
 def docker_env():
-    my_docker_env = tests_util.DockerEnv()
-    my_docker_env.start_host('image_sshd', 'gateway')
-    my_docker_env.start_host('image_restserver', 'remotehost')
-    yield my_docker_env  # provide the fixture value
-    print("teardown docker_env")
-    my_docker_env.clean()
+    docker_compose_env = tests_util.DockerEnv(os.path.join("docker", "docker-compose_restclient.yaml"))
+    yield docker_compose_env
+    docker_compose_env.clean()
 
 
 def test_requests(docker_env):
     gateway_ip, gateway_port = docker_env.get_host_ip_port('gateway')
-    remotehost_ip, remotehost_port = docker_env.get_host_ip_port('remotehost', private_port=5000)
 
     with SSHSession(host=gateway_ip, port=gateway_port, username='user1', password='password1') as gateway_session:
         channel = gateway_session.ssh_transport.open_session()
@@ -37,8 +35,7 @@ def test_requests(docker_env):
         http_session.mount("http://", adapter)
         # s.mount("https://", adapter)
 
-        http_response = http_session.post('http://%s:%s/echo-method' % (tests_util.get_host_ip(), remotehost_port),
-                                          json={'key': 'value'})
+        http_response = http_session.post('http://%s/echo-method' % REMOTE_HOST_IP_PORT, json={'key': 'value'})
         assert http_response.status_code == 200
 
         assert 'request-method' in http_response.headers
